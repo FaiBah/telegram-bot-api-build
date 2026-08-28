@@ -11,18 +11,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            git \
-            g++ \
-            make \
-            cmake \
-            gperf \
-            zlib1g-dev \
-            libssl-dev
-
       - name: Clone upstream source
         run: |
           git clone --recursive \
@@ -34,11 +22,12 @@ jobs:
           cd telegram-bot-api
 
           VERSION=$(sed -n \
-            's/.*project(TelegramBotApi VERSION \([^ ]*\).*/\1/p' \
-            CMakeLists.txt)
+            's/^[[:space:]]*project(TelegramBotApi VERSION \([^ )]*\).*/\1/p' \
+            CMakeLists.txt \
+            | head -n 1)
 
           if [ -z "$VERSION" ]; then
-            echo "Could not detect upstream version."
+            echo "ERROR: Could not detect Telegram Bot API version."
             exit 1
           fi
 
@@ -52,27 +41,55 @@ jobs:
       - name: Check existing release
         id: release_check
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-            -H "Authorization: Bearer $GH_TOKEN" \
+          STATUS=$(curl -s \
+            -o /dev/null \
+            -w "%{http_code}" \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${{ steps.version.outputs.tag }}")
 
           if [ "$STATUS" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Release ${{ steps.version.outputs.tag }} already exists."
-          else
+          elif [ "$STATUS" = "404" ]; then
             echo "exists=false" >> "$GITHUB_OUTPUT"
             echo "Release ${{ steps.version.outputs.tag }} does not exist."
+          else
+            echo "GitHub API returned HTTP $STATUS"
+            exit 1
           fi
+
+      - name: Restore CMake cache
+        if: steps.release_check.outputs.exists != 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            telegram-bot-api/build
+            ~/.cache
+          key: telegram-bot-api-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.tag }}
+          restore-keys: |
+            telegram-bot-api-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install dependencies
+        if: steps.release_check.outputs.exists != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            g++ \
+            make \
+            cmake \
+            gperf \
+            zlib1g-dev \
+            libssl-dev
 
       - name: Build
         if: steps.release_check.outputs.exists != 'true'
         run: |
           cd telegram-bot-api
 
-          mkdir build
+          mkdir -p build
           cd build
 
           cmake \
@@ -87,7 +104,10 @@ jobs:
       - name: Verify output
         if: steps.release_check.outputs.exists != 'true'
         run: |
-          ls -lh api/bin/
+          test -f api/bin/telegram-bot-api
+
+          ls -lh api/bin/telegram-bot-api
+
           file api/bin/telegram-bot-api
 
       - name: Package
@@ -96,6 +116,9 @@ jobs:
           tar -czf \
             "telegram-bot-api-linux-x64-${{ steps.version.outputs.tag }}.tar.gz" \
             -C api .
+
+          ls -lh \
+            "telegram-bot-api-linux-x64-${{ steps.version.outputs.tag }}.tar.gz"
 
       - name: Create GitHub Release
         if: steps.release_check.outputs.exists != 'true'
@@ -115,4 +138,4 @@ jobs:
         if: steps.release_check.outputs.exists == 'true'
         run: |
           echo "Telegram Bot API ${{ steps.version.outputs.tag }} already exists."
-          echo "Nothing to build."
+          echo "No build required."
