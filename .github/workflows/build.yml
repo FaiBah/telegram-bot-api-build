@@ -23,21 +23,27 @@ jobs:
             zlib1g-dev \
             libssl-dev
 
-      - name: Get latest upstream version
-        id: version
-        run: |
-          VERSION=$(curl -fsSL \
-            https://api.github.com/repos/tdlib/telegram-bot-api/releases/latest \
-            | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Latest version: $VERSION"
-
       - name: Clone latest source
         run: |
           git clone --recursive \
-            --branch "${{ steps.version.outputs.version }}" \
             https://github.com/tdlib/telegram-bot-api.git
+
+      - name: Get upstream version
+        id: version
+        run: |
+          cd telegram-bot-api
+
+          VERSION=$(sed -n \
+            's/.*project(TelegramBotApi VERSION \([^ ]*\).*/\1/p' \
+            CMakeLists.txt)
+
+          if [ -z "$VERSION" ]; then
+            echo "Could not detect Telegram Bot API version"
+            exit 1
+          fi
+
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Upstream version: v$VERSION"
 
       - name: Build
         run: |
@@ -55,13 +61,18 @@ jobs:
             --target install \
             --parallel 2
 
+      - name: Verify output
+        run: |
+          ls -lh api/bin/
+          file api/bin/telegram-bot-api
+
       - name: Package
         run: |
           tar -czf \
             "telegram-bot-api-linux-x64-${{ steps.version.outputs.version }}.tar.gz" \
             -C api .
 
-      - name: Create versioned release
+      - name: Create versioned GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
