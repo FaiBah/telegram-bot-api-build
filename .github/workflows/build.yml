@@ -67,7 +67,6 @@ jobs:
         with:
           path: |
             telegram-bot-api/build
-            ~/.cache
           key: telegram-bot-api-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.tag }}
           restore-keys: |
             telegram-bot-api-${{ runner.os }}-${{ runner.arch }}-
@@ -105,9 +104,7 @@ jobs:
         if: steps.release_check.outputs.exists != 'true'
         run: |
           test -f api/bin/telegram-bot-api
-
           ls -lh api/bin/telegram-bot-api
-
           file api/bin/telegram-bot-api
 
       - name: Package
