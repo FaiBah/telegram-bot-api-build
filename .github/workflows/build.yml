@@ -50,21 +50,25 @@ jobs:
           echo "Upstream version: $TAG"
 
       - name: Check existing release
-        id: release
+        id: release_check
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${{ steps.version.outputs.tag }}")
+
+          if [ "$STATUS" = "200" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG already exists."
+            echo "Release ${{ steps.version.outputs.tag }} already exists."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "Release $TAG does not exist."
+            echo "Release ${{ steps.version.outputs.tag }} does not exist."
           fi
 
       - name: Build
-        if: steps.release.outputs.exists != 'true'
+        if: steps.release_check.outputs.exists != 'true'
         run: |
           cd telegram-bot-api
 
@@ -81,32 +85,34 @@ jobs:
             --parallel 2
 
       - name: Verify output
-        if: steps.release.outputs.exists != 'true'
+        if: steps.release_check.outputs.exists != 'true'
         run: |
           ls -lh api/bin/
           file api/bin/telegram-bot-api
 
       - name: Package
-        if: steps.release.outputs.exists != 'true'
+        if: steps.release_check.outputs.exists != 'true'
         run: |
           tar -czf \
             "telegram-bot-api-linux-x64-${{ steps.version.outputs.tag }}.tar.gz" \
             -C api .
 
       - name: Create GitHub Release
-        if: steps.release.outputs.exists != 'true'
+        if: steps.release_check.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Telegram Bot API ${{ steps.version.outputs.tag }}
+          body: |
+            Prebuilt Telegram Bot API ${{ steps.version.outputs.tag }}
+            for Linux x64.
+          files: |
+            telegram-bot-api-linux-x64-${{ steps.version.outputs.tag }}.tar.gz
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-        run: |
-          gh release create \
-            "$TAG" \
-            "telegram-bot-api-linux-x64-${TAG}.tar.gz" \
-            --title "Telegram Bot API $TAG" \
-            --notes "Prebuilt Telegram Bot API $TAG for Linux x64."
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Already up to date
-        if: steps.release.outputs.exists == 'true'
+        if: steps.release_check.outputs.exists == 'true'
         run: |
           echo "Telegram Bot API ${{ steps.version.outputs.tag }} already exists."
           echo "Nothing to build."
