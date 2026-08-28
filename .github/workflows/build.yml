@@ -1,0 +1,72 @@
+name: Build Telegram Bot API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git \
+            g++ \
+            make \
+            cmake \
+            gperf \
+            zlib1g-dev \
+            libssl-dev
+
+      - name: Clone latest source
+        run: |
+          git clone --recursive \
+            https://github.com/tdlib/telegram-bot-api.git
+
+      - name: Get upstream version
+        id: version
+        run: |
+          cd telegram-bot-api
+
+          VERSION=$(git describe --tags --abbrev=0)
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Upstream version: $VERSION"
+
+      - name: Build
+        run: |
+          cd telegram-bot-api
+
+          mkdir build
+          cd build
+
+          cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$GITHUB_WORKSPACE/api" \
+            ..
+
+          cmake --build . \
+            --target install \
+            --parallel 2
+
+      - name: Package
+        run: |
+          tar -czf \
+            "telegram-bot-api-linux-x64-${{ steps.version.outputs.version }}.tar.gz" \
+            -C api .
+
+      - name: Create versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create \
+            "${{ steps.version.outputs.version }}" \
+            "telegram-bot-api-linux-x64-${{ steps.version.outputs.version }}.tar.gz" \
+            --title "Telegram Bot API ${{ steps.version.outputs.version }}" \
+            --notes "Prebuilt Telegram Bot API ${{ steps.version.outputs.version }} for Linux x64."
