@@ -23,21 +23,21 @@ jobs:
             zlib1g-dev \
             libssl-dev
 
+      - name: Get latest upstream version
+        id: version
+        run: |
+          VERSION=$(curl -fsSL \
+            https://api.github.com/repos/tdlib/telegram-bot-api/releases/latest \
+            | python -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Latest version: $VERSION"
+
       - name: Clone latest source
         run: |
           git clone --recursive \
+            --branch "${{ steps.version.outputs.version }}" \
             https://github.com/tdlib/telegram-bot-api.git
-
-      - name: Get upstream version
-        id: version
-        run: |
-          cd telegram-bot-api
-
-          VERSION=$(git describe --tags --abbrev=0)
-
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-
-          echo "Upstream version: $VERSION"
 
       - name: Build
         run: |
